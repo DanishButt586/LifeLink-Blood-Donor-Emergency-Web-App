@@ -1,26 +1,140 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: 30 20% 98%;
+  --foreground: 240 10% 12%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 12%;
+
+  --border: 240 6% 88%;
+  --input: 240 6% 88%;
+
+  --muted: 240 5% 95%;
+  --muted-foreground: 240 4% 40%;
+
+  --primary: 350 75% 45%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 172 60% 33%;
+  --secondary-foreground: 0 0% 100%;
+
+  --success: 172 60% 33%;
+  --danger: 350 75% 45%;
+  --warning: 38 92% 42%;
+
+  --ring: 350 75% 45%;
+  --radius: 0.75rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  /* Deeper, more atmospheric canvas than before — gives card/border elevation room to read. */
+  --background: 240 14% 6%;
+  --foreground: 0 0% 96%;
+
+  /* Raised further off the background (was nearly indistinguishable at 10%). */
+  --card: 240 10% 13%;
+  --card-foreground: 0 0% 96%;
+
+  /* More visible edges, still soft — not a harsh light-mode-style gray line. */
+  --border: 240 8% 26%;
+  --input: 240 8% 26%;
+
+  --muted: 240 8% 18%;
+  --muted-foreground: 240 5% 65%;
+
+  /* Darkened from 58%→49% L so primary-foreground (white) button/badge text clears WCAG AA
+     (was ~3.9:1, fails; now ~4.6:1). Saturation raised to compensate — stays vivid, not muddy. */
+  --primary: 350 84% 49%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 172 55% 50%;
+  --secondary-foreground: 240 14% 6%;
+
+  --success: 172 55% 50%;
+  --danger: 350 84% 49%;
+  --warning: 38 92% 55%;
+
+  --ring: 350 84% 49%;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    transition:
+      background-color 0.3s ease,
+      color 0.3s ease;
+  }
+
+  ::selection {
+    @apply bg-primary/20 text-primary;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--muted-foreground) / 0.25);
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--muted-foreground) / 0.4);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Subtle grain so surfaces read as tactile rather than flat. Kept faint by design. */
+  .bg-grain {
+    position: relative;
+    isolation: isolate;
+  }
+  .bg-grain::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.035;
+    border-radius: inherit;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .dark .bg-grain::before {
+    opacity: 0.07;
+  }
+
+  /* Soft gradient mesh for hero/CTA/stat backdrops — brand-colored, blurred, low opacity. */
+  .bg-mesh {
+    background-image:
+      radial-gradient(at 12% 15%, hsl(var(--primary) / 0.16) 0px, transparent 55%),
+      radial-gradient(at 88% 10%, hsl(var(--secondary) / 0.14) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, hsl(var(--primary) / 0.10) 0px, transparent 55%);
+  }
+  .dark .bg-mesh {
+    background-image:
+      radial-gradient(at 12% 15%, hsl(var(--primary) / 0.26) 0px, transparent 55%),
+      radial-gradient(at 88% 10%, hsl(var(--secondary) / 0.24) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, hsl(var(--primary) / 0.16) 0px, transparent 55%);
+  }
 }

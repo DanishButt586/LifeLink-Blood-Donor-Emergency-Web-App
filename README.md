@@ -35,6 +35,7 @@
 - [Running Locally](#-running-locally)
 - [Database Schema](#️-database-schema)
 - [Project Structure](#-project-structure)
+- [Contributors](#-contributors)
 
 ---
 
@@ -376,9 +377,16 @@ lifelink/
 
 ---
 
+## 👥 Contributors
+
+| Contributor | Role |
+| --- | --- |
+| **Danish Butt** | Developer & Project Author |
+
+---
+
 <div align="center">
 
-### 🎓 University Final Project
 
 *A submission-ready demonstration of a full-stack, real-time, AI-assisted web application.*
 

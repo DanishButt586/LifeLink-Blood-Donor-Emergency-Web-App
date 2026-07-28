@@ -1,5 +1,35 @@
 import { NextResponse } from "next/server";
 
+type Provider = "openrouter" | "anthropic" | "deepseek" | "openai" | "gemini";
+
+const PROVIDERS: Provider[] = ["openrouter", "anthropic", "deepseek", "openai", "gemini"];
+
+// OpenAI-compatible providers share one request/response shape and differ only in endpoint, model, and extra headers.
+const OPENAI_COMPATIBLE: Record<string, { url: string; model: string; headers?: Record<string, string> }> = {
+  openrouter: {
+    url: "https://openrouter.ai/api/v1/chat/completions",
+    model: "deepseek/deepseek-chat",
+    headers: { "HTTP-Referer": "https://lifelink.app", "X-Title": "LifeLink" },
+  },
+  deepseek: { url: "https://api.deepseek.com/chat/completions", model: "deepseek-chat" },
+  openai: { url: "https://api.openai.com/v1/chat/completions", model: "gpt-4o-mini" },
+};
+
+/**
+ * Picks the provider from AI_PROVIDER when set, otherwise guesses from the key prefix.
+ * The guess cannot tell OpenAI from DeepSeek — both issue plain "sk-..." keys and it
+ * defaults to DeepSeek — so set AI_PROVIDER explicitly when using OpenAI.
+ */
+function resolveProvider(key: string): Provider {
+  const explicit = process.env.AI_PROVIDER?.trim().toLowerCase() as Provider | undefined;
+  if (explicit && PROVIDERS.includes(explicit)) return explicit;
+
+  if (key.startsWith("sk-or-v1-")) return "openrouter";
+  if (key.startsWith("sk-ant-")) return "anthropic";
+  if (key.startsWith("sk-")) return "deepseek";
+  return "gemini";
+}
+
 // Dynamic fetch helper with retry logic for rate limits (429) or transient unavailable states (503)
 async function fetchWithRetry(url: string, options: RequestInit, retries = 2, delay = 1000): Promise<Response> {
   const response = await fetch(url, options);
@@ -35,12 +65,13 @@ export async function POST(req: Request) {
     const filteredMessages = messages.filter((m: any) => m.role === "user" || m.content !== "welcome");
 
     // 2. Strict alternating sequence generator starting with 'user' for safety
+    const key = apiKey.trim();
+    const provider = resolveProvider(key);
     const cleanHistory: any[] = [];
     let nextExpectedRole = "user";
 
     for (const msg of filteredMessages) {
-      const isOaiOrAnthropic = apiKey.trim().startsWith("sk-");
-      const msgRole = msg.role === "user" ? "user" : (isOaiOrAnthropic ? "assistant" : "model");
+      const msgRole = msg.role === "user" ? "user" : (provider === "gemini" ? "model" : "assistant");
       const normalizedRole = msg.role === "user" ? "user" : "model";
 
       if (normalizedRole === nextExpectedRole && msg.content?.trim()) {
@@ -69,42 +100,8 @@ export async function POST(req: Request) {
 5. Never make up specific statistics, hospital names, or claim to access the user's personal donor record — you only give general guidance.
 6. Do NOT use markdown bold asterisks (like **text**). Output clean, clear plain text without any ** symbols.`;
 
-    const key = apiKey.trim();
-
-    if (key.startsWith("sk-or-v1-")) {
-      // 1. Call OpenRouter API
-      const formattedMessages = [
-        { role: "system", content: systemPrompt },
-        ...cleanHistory.map((m: any) => ({
-          role: m.role === "model" ? "assistant" : m.role,
-          content: m.content || m.parts?.[0]?.text || "",
-        })),
-      ];
-
-      const response = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${key}`,
-          "HTTP-Referer": "https://lifelink.app",
-          "X-Title": "LifeLink",
-        },
-        body: JSON.stringify({
-          model: "deepseek/deepseek-chat",
-          messages: formattedMessages,
-        }),
-      });
-
-      if (!response.ok) {
-        return handleApiError(response.status);
-      }
-
-      const responseData = await response.json();
-      const assistantReply = responseData.choices?.[0]?.message?.content || "I apologize, but I could not formulate a reply.";
-
-      return NextResponse.json({ reply: assistantReply });
-    } else if (key.startsWith("sk-ant-")) {
-      // 2. Call Anthropic Messages API
+    if (provider === "anthropic") {
+      // 1. Call Anthropic Messages API
       const formattedMessages = cleanHistory.map((m: any) => ({
         role: m.role === "model" ? "assistant" : m.role,
         content: m.content || m.parts?.[0]?.text || "",
@@ -133,8 +130,10 @@ export async function POST(req: Request) {
       const assistantReply = responseData.content?.[0]?.text || "I apologize, but I could not formulate a reply.";
 
       return NextResponse.json({ reply: assistantReply });
-    } else if (key.startsWith("sk-")) {
-      // 3. Call DeepSeek API (OpenAI-compatible)
+    } else if (provider !== "gemini") {
+      // 2. Call OpenRouter / DeepSeek / OpenAI — all OpenAI-compatible
+      const config = OPENAI_COMPATIBLE[provider];
+
       const formattedMessages = [
         { role: "system", content: systemPrompt },
         ...cleanHistory.map((m: any) => ({
@@ -143,14 +142,15 @@ export async function POST(req: Request) {
         })),
       ];
 
-      const response = await fetchWithRetry("https://api.deepseek.com/chat/completions", {
+      const response = await fetchWithRetry(config.url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${key}`,
+          ...config.headers,
         },
         body: JSON.stringify({
-          model: "deepseek-chat",
+          model: config.model,
           messages: formattedMessages,
         }),
       });

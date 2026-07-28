@@ -49,10 +49,12 @@ function getInitials(name?: string | null) {
   return initials || null;
 }
 
-/** Renders plain text with basic bullet/numbered-list detection so AI replies read as formatted steps, not a wall of text. */
+/** Renders plain text with basic bullet/numbered-list detection, stripping raw markdown asterisks ** so AI replies read cleanly without raw syntax. */
 function renderMessageContent(content: string) {
   type Block = { type: "p" | "ul" | "ol"; items: string[] };
   const blocks: Block[] = [];
+
+  const stripFormatting = (str: string) => str.replace(/\*\*/g, "").replace(/__/g, "");
 
   for (const raw of content.split("\n")) {
     const line = raw.trim();
@@ -62,15 +64,18 @@ function renderMessageContent(content: string) {
     const numberedMatch = /^\d+[.)]\s+(.*)/.exec(line);
 
     if (bulletMatch) {
+      const cleanItem = stripFormatting(bulletMatch[1]);
       const last = blocks[blocks.length - 1];
-      if (last?.type === "ul") last.items.push(bulletMatch[1]);
-      else blocks.push({ type: "ul", items: [bulletMatch[1]] });
+      if (last?.type === "ul") last.items.push(cleanItem);
+      else blocks.push({ type: "ul", items: [cleanItem] });
     } else if (numberedMatch) {
+      const cleanItem = stripFormatting(numberedMatch[1]);
       const last = blocks[blocks.length - 1];
-      if (last?.type === "ol") last.items.push(numberedMatch[1]);
-      else blocks.push({ type: "ol", items: [numberedMatch[1]] });
+      if (last?.type === "ol") last.items.push(cleanItem);
+      else blocks.push({ type: "ol", items: [cleanItem] });
     } else {
-      blocks.push({ type: "p", items: [line] });
+      const cleanLine = stripFormatting(line);
+      blocks.push({ type: "p", items: [cleanLine] });
     }
   }
 

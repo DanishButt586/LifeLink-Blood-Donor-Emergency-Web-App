@@ -39,7 +39,8 @@ export async function POST(req: Request) {
     let nextExpectedRole = "user";
 
     for (const msg of filteredMessages) {
-      const msgRole = msg.role === "user" ? "user" : (isAnthropicKey(apiKey) ? "assistant" : "model");
+      const isOaiOrAnthropic = apiKey.trim().startsWith("sk-");
+      const msgRole = msg.role === "user" ? "user" : (isOaiOrAnthropic ? "assistant" : "model");
       const normalizedRole = msg.role === "user" ? "user" : "model";
 
       if (normalizedRole === nextExpectedRole && msg.content?.trim()) {
@@ -65,22 +66,55 @@ export async function POST(req: Request) {
 2. Always clarify you are not a doctor and cannot give a personal medical diagnosis or clearance — for any specific health condition, medication, or symptom the user mentions, advise them to confirm with the blood bank staff or their doctor before donating.
 3. Be warm, concise, and reassuring — many users asking are anxious about whether they qualify to help someone in an emergency.
 4. If asked about anything unrelated to blood donation or the app, politely redirect back to donation-related topics.
-5. Never make up specific statistics, hospital names, or claim to access the user's personal donor record — you only give general guidance.`;
+5. Never make up specific statistics, hospital names, or claim to access the user's personal donor record — you only give general guidance.
+6. Do NOT use markdown bold asterisks (like **text**). Output clean, clear plain text without any ** symbols.`;
 
-    const isAnthropic = isAnthropicKey(apiKey);
+    const key = apiKey.trim();
 
-    if (isAnthropic) {
-      // Call Anthropic Messages API
+    if (key.startsWith("sk-or-v1-")) {
+      // 1. Call OpenRouter API
+      const formattedMessages = [
+        { role: "system", content: systemPrompt },
+        ...cleanHistory.map((m: any) => ({
+          role: m.role === "model" ? "assistant" : m.role,
+          content: m.content || m.parts?.[0]?.text || "",
+        })),
+      ];
+
+      const response = await fetchWithRetry("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${key}`,
+          "HTTP-Referer": "https://lifelink.app",
+          "X-Title": "LifeLink",
+        },
+        body: JSON.stringify({
+          model: "deepseek/deepseek-chat",
+          messages: formattedMessages,
+        }),
+      });
+
+      if (!response.ok) {
+        return handleApiError(response.status);
+      }
+
+      const responseData = await response.json();
+      const assistantReply = responseData.choices?.[0]?.message?.content || "I apologize, but I could not formulate a reply.";
+
+      return NextResponse.json({ reply: assistantReply });
+    } else if (key.startsWith("sk-ant-")) {
+      // 2. Call Anthropic Messages API
       const formattedMessages = cleanHistory.map((m: any) => ({
-        role: m.role,
-        content: m.content,
+        role: m.role === "model" ? "assistant" : m.role,
+        content: m.content || m.parts?.[0]?.text || "",
       }));
 
       const response = await fetchWithRetry("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey.trim(),
+          "x-api-key": key,
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
@@ -99,14 +133,44 @@ export async function POST(req: Request) {
       const assistantReply = responseData.content?.[0]?.text || "I apologize, but I could not formulate a reply.";
 
       return NextResponse.json({ reply: assistantReply });
+    } else if (key.startsWith("sk-")) {
+      // 3. Call DeepSeek API (OpenAI-compatible)
+      const formattedMessages = [
+        { role: "system", content: systemPrompt },
+        ...cleanHistory.map((m: any) => ({
+          role: m.role === "model" ? "assistant" : m.role,
+          content: m.content || m.parts?.[0]?.text || "",
+        })),
+      ];
+
+      const response = await fetchWithRetry("https://api.deepseek.com/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: formattedMessages,
+        }),
+      });
+
+      if (!response.ok) {
+        return handleApiError(response.status);
+      }
+
+      const responseData = await response.json();
+      const assistantReply = responseData.choices?.[0]?.message?.content || "I apologize, but I could not formulate a reply.";
+
+      return NextResponse.json({ reply: assistantReply });
     } else {
-      // Call Google Gemini API
+      // 3. Call Google Gemini API
       const formattedContents = cleanHistory.map((m: any) => ({
         role: m.role,
         parts: m.parts,
       }));
 
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey.trim()}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${key}`;
 
       const response = await fetchWithRetry(url, {
         method: "POST",
@@ -139,12 +203,20 @@ export async function POST(req: Request) {
   }
 }
 
-function isAnthropicKey(key: string): boolean {
-  return key.trim().startsWith("sk-ant-");
-}
-
 function handleApiError(status: number) {
   console.error("AI Service Error Status:", status);
+  if (status === 402) {
+    return NextResponse.json(
+      { error: "DeepSeek API account has insufficient balance. Please top up your DeepSeek balance or provide an active API key." },
+      { status: 402 }
+    );
+  }
+  if (status === 401) {
+    return NextResponse.json(
+      { error: "Invalid API key provided. Please verify your API key in environment settings." },
+      { status: 401 }
+    );
+  }
   if (status === 429) {
     return NextResponse.json(
       { error: "Too many requests. Please wait a few seconds and try again." },
